@@ -77,7 +77,24 @@ jobs:
             -p 5003:8765 \
             ${{ env.IMAGE }}-final:latest
       - name: Pytest
-        run: docker exec fastapi-tdd python -m pytest . -x # docker exec fastapi-tdd python -m pytest .
+        run: |
+          docker exec fastapi-tdd python -m pytest . -x
+
+      - name: Diagnose container
+        if: always()
+        run: |
+          echo "=== Container status ==="
+          docker ps -a
+
+          echo "=== OOM status ==="
+          docker inspect fastapi-tdd \
+            --format='OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} Status={{.State.Status}}'
+
+          echo "=== Container memory ==="
+          docker stats fastapi-tdd --no-stream || true
+
+          echo "=== Container logs ==="
+          docker logs fastapi-tdd || true
       - name: Flake8
         run: docker exec fastapi-tdd python -m flake8 .
       - name: Black
