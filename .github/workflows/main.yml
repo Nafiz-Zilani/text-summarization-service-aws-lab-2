@@ -49,22 +49,26 @@ jobs:
           docker push ${{ env.IMAGE }}-final:${{ github.sha }}
           docker push ${{ env.IMAGE }}-final:latest
 
-  test:
+    test:
     name: Test Docker Image
     runs-on: ubuntu-latest
     needs: build
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
           ref: main
+
       - name: Log in to GitHub Packages
         run: echo ${GITHUB_TOKEN} | docker login -u ${GITHUB_ACTOR} --password-stdin ghcr.io
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Pull images
+
+      - name: Pull image
         run: |
           docker pull ${{ env.IMAGE }}-final:latest
+
       - name: Run container
         run: |
           docker run \
@@ -76,29 +80,53 @@ jobs:
             -e DATABASE_TEST_URL=sqlite://sqlite.db \
             -p 5003:8765 \
             ${{ env.IMAGE }}-final:latest
-      - name: Pytest
-        run: |
-          docker exec fastapi-tdd python -m pytest . -x
 
-      - name: Diagnose container
-        if: always()
+      - name: Check container before pytest
         run: |
-          echo "=== Container status ==="
+          echo "=== Docker containers ==="
           docker ps -a
 
-          echo "=== OOM status ==="
+          echo "=== Container state ==="
           docker inspect fastapi-tdd \
-            --format='OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} Status={{.State.Status}}'
+            --format='Status={{.State.Status}} Running={{.State.Running}} OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}}'
 
           echo "=== Container memory ==="
           docker stats fastapi-tdd --no-stream || true
 
           echo "=== Container logs ==="
           docker logs fastapi-tdd || true
+
+      - name: Test Python import
+        run: |
+          docker exec fastapi-tdd python -c "import app; print('app import OK')"
+
+      - name: Test pytest import
+        run: |
+          docker exec fastapi-tdd python -m pytest --collect-only -q
+
+      - name: Pytest
+        run: |
+          docker exec fastapi-tdd python -m pytest . -x
+
+      - name: Diagnose after pytest
+        if: always()
+        run: |
+          echo "=== Container state ==="
+          docker inspect fastapi-tdd \
+            --format='Status={{.State.Status}} Running={{.State.Running}} OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}}'
+
+          echo "=== Container memory ==="
+          docker stats fastapi-tdd --no-stream || true
+
+          echo "=== Container logs ==="
+          docker logs fastapi-tdd || true
+
       - name: Flake8
         run: docker exec fastapi-tdd python -m flake8 .
+
       - name: Black
         run: docker exec fastapi-tdd python -m black . --check
+
       - name: isort
         run: docker exec fastapi-tdd python -m isort . --check-only
 
